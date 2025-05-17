@@ -23,6 +23,7 @@ private:
 	void CreateTestsTab(UI::LinearLayout *list);
 	void CreateAudioTab(UI::LinearLayout *list);
 	void CreateGraphicsTab(UI::LinearLayout *list);
+	void CreateNetworkTab(UI::LinearLayout *list);
 
 	UI::EventReturn OnRunCPUTests(UI::EventParams &e);
 	UI::EventReturn OnLoggingChanged(UI::EventParams &e);
@@ -40,6 +41,8 @@ private:
 	UI::EventReturn OnMemstickTest(UI::EventParams &e);
 	UI::EventReturn OnTouchscreenTest(UI::EventParams &e);
 	UI::EventReturn OnCopyStatesToRoot(UI::EventParams &e);
+
+	void MemoryMapTest();
 
 	bool allowDebugger_ = false;
 	bool canAllowDebugger_ = true;
