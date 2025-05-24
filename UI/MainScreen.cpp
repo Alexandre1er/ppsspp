@@ -75,26 +75,14 @@
 
 bool MainScreen::showHomebrewTab = false;
 
-bool LaunchFile(ScreenManager *screenManager, const Path &path) {
-	// Depending on the file type, we don't want to launch EmuScreen at all.
-	std::unique_ptr<FileLoader> loader(ConstructFileLoader(path));
-	if (!loader) {
-		return false;
-	}
-
-	std::string errorString;
-	IdentifiedFileType type = Identify_File(loader.get(), &errorString);
-
-	switch (type) {
-	case IdentifiedFileType::ARCHIVE_ZIP:
+static void LaunchFile(ScreenManager *screenManager, const Path &path) {
+	if (path.GetFileExtension() == ".zip") {
+		// If it's a zip file, we have a screen for that.
 		screenManager->push(new InstallZipScreen(path));
-		break;
-	default:
-		// Let the EmuScreen take care of it.
+	} else {
+		// Otherwise let the EmuScreen take care of it, including error handling.
 		screenManager->switchScreen(new EmuScreen(path));
-		break;
 	}
-	return true;
 }
 
 static bool IsTempPath(const Path &str) {
@@ -1102,7 +1090,7 @@ void MainScreen::CreateViews() {
 	// Scrolling action menu to the right.
 	using namespace UI;
 
-	bool vertical = UseVerticalLayout();
+	const bool vertical = UseVerticalLayout();
 
 	auto mm = GetI18NCategory(I18NCat::MAINMENU);
 
@@ -1292,12 +1280,16 @@ void MainScreen::CreateViews() {
 	ClickableTextView *ver = rightColumnItems->Add(new ClickableTextView(versionString, new LinearLayoutParams(Margins(70, -10, 0, 4))));
 	ver->SetSmall(true);
 	ver->SetClip(false);
-	ver->OnClick.Add([](UI::EventParams &e) {
-		auto di = GetI18NCategory(I18NCat::DIALOG);
-		System_CopyStringToClipboard(PPSSPP_GIT_VERSION);
-		g_OSD.Show(OSDType::MESSAGE_INFO, ApplySafeSubstitutions(di->T("Copied to clipboard: %1"), PPSSPP_GIT_VERSION));
-		return UI::EVENT_DONE;
-	});
+
+	// Only allow copying the version if it looks like a git version string. 1.19 for example is not really necessary to be able to copy/paste.
+	if (strchr(PPSSPP_GIT_VERSION, '-')) {
+		ver->OnClick.Add([](UI::EventParams &e) {
+			auto di = GetI18NCategory(I18NCat::DIALOG);
+			System_CopyStringToClipboard(PPSSPP_GIT_VERSION);
+			g_OSD.Show(OSDType::MESSAGE_INFO, ApplySafeSubstitutions(di->T("Copied to clipboard: %1"), PPSSPP_GIT_VERSION));
+			return UI::EVENT_DONE;
+		});
+	}
 
 	LinearLayout *rightColumnChoices = rightColumnItems;
 	if (vertical) {
@@ -1317,7 +1309,11 @@ void MainScreen::CreateViews() {
 		rightColumnChoices->Add(new Choice(mm->T("www.ppsspp.org")))->OnClick.Handle(this, &MainScreen::OnPPSSPPOrg);
 		if (!System_GetPropertyBool(SYSPROP_APP_GOLD) && (System_GetPropertyInt(SYSPROP_DEVICE_TYPE) != DEVICE_TYPE_VR)) {
 			Choice *gold = rightColumnChoices->Add(new Choice(mm->T("Buy PPSSPP Gold")));
-			gold->OnClick.Handle(this, &MainScreen::OnSupport);
+			ScreenManager *sm = screenManager();
+			gold->OnClick.Add([sm](UI::EventParams &) {
+				LaunchBuyGold(sm);
+				return UI::EVENT_DONE;
+			});
 			gold->SetIcon(ImageID("I_ICONGOLD"), 0.5f);
 		}
 	}
@@ -1429,9 +1425,8 @@ void MainScreen::sendMessage(UIMessage message, const char *value) {
 	UIScreenWithBackground::sendMessage(message, value);
 
 	if (message == UIMessage::REQUEST_GAME_BOOT) {
-		if (screenManager()->topScreen() == this) {
-			LaunchFile(screenManager(), Path(std::string(value)));
-		}
+		screenManager()->cancelScreensAbove(this);
+		LaunchFile(screenManager(), Path(std::string(value)));
 	} else if (message == UIMessage::PERMISSION_GRANTED && !strcmp(value, "storage")) {
 		RecreateViews();
 	} else if (message == UIMessage::RECENT_FILES_CHANGED) {
@@ -1583,7 +1578,7 @@ UI::EventReturn MainScreen::OnCredits(UI::EventParams &e) {
 	return UI::EVENT_DONE;
 }
 
-UI::EventReturn MainScreen::OnSupport(UI::EventParams &e) {
+void LaunchBuyGold(ScreenManager *screenManager) {
 #if PPSSPP_PLATFORM(IOS_APP_STORE)
 	System_LaunchUrl(LaunchUrlType::BROWSER_URL, "https://apps.apple.com/us/app/ppsspp-gold-psp-emulator/id6502287918");
 #elif PPSSPP_PLATFORM(ANDROID)
@@ -1591,7 +1586,6 @@ UI::EventReturn MainScreen::OnSupport(UI::EventParams &e) {
 #else
 	System_LaunchUrl(LaunchUrlType::BROWSER_URL, "https://www.ppsspp.org/buygold");
 #endif
-	return UI::EVENT_DONE;
 }
 
 UI::EventReturn MainScreen::OnPPSSPPOrg(UI::EventParams &e) {

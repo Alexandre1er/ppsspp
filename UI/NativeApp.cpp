@@ -643,6 +643,7 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 						fprintf(stderr, "File not found: %s\n", boot_filename.c_str());
 #if defined(_WIN32) || defined(__ANDROID__)
 						// Ignore and proceed.
+						boot_filename.clear();
 #else
 						// Bail.
 						exit(1);
@@ -725,7 +726,7 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 	g_BackgroundAudio.SFX().Init();
 
 	if (!boot_filename.empty() && stateToLoad.Valid()) {
-		SaveState::Load(stateToLoad, -1, [](SaveState::Status status, std::string_view message, void *) {
+		SaveState::Load(stateToLoad, -1, [](SaveState::Status status, std::string_view message) {
 			if (!message.empty() && (!g_Config.bDumpFrames || !g_Config.bDumpVideoOutput)) {
 				g_OSD.Show(status == SaveState::Status::SUCCESS ? OSDType::MESSAGE_SUCCESS : OSDType::MESSAGE_ERROR,
 					message, status == SaveState::Status::SUCCESS ? 2.0 : 5.0);
@@ -756,7 +757,8 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 	} else if (gotoDeveloperTools) {
 		g_screenManager->switchScreen(new MainScreen());
 		g_screenManager->push(new DeveloperToolsScreen(Path()));
-	} else if (skipLogo) {
+	} else if (skipLogo && !boot_filename.empty()) {
+		INFO_LOG(Log::System, "Launching EmuScreen with boot filename '%s'", boot_filename.c_str());
 		g_screenManager->switchScreen(new EmuScreen(boot_filename));
 	} else {
 		g_screenManager->switchScreen(new LogoScreen(AfterLogoScreen::DEFAULT));
@@ -1282,7 +1284,6 @@ bool NativeIsAtTopLevel() {
 	Screen *currentScreen = g_screenManager->topScreen();
 	if (currentScreen) {
 		bool top = currentScreen->isTopLevel();
-		INFO_LOG(Log::System, "Screen toplevel: %i", (int)top);
 		return currentScreen->isTopLevel();
 	} else {
 		ERROR_LOG(Log::System, "No current screen");
@@ -1580,8 +1581,8 @@ bool Native_IsWindowHidden() {
 
 static bool IsWindowSmall(int pixelWidth, int pixelHeight) {
 	// Can't take this from config as it will not be set if windows is maximized.
-	int w = (int)(pixelWidth * g_display.dpi_scale_real);
-	int h = (int)(pixelHeight * g_display.dpi_scale_real);
+	int w = (int)(pixelWidth * g_display.dpi_scale_real_x);
+	int h = (int)(pixelHeight * g_display.dpi_scale_real_y);
 	return g_Config.IsPortrait() ? (h < 480 + 80) : (w < 480 + 80);
 }
 
@@ -1604,7 +1605,7 @@ bool Native_UpdateScreenScale(int pixel_width, int pixel_height, float customSca
 		customScale = UIScaleFactorToMultiplier(g_Config.iUIScaleFactor);
 	}
 
-	if (g_display.Recalculate(pixel_width, pixel_height, g_logical_dpi / dpi, customScale)) {
+	if (g_display.Recalculate(pixel_width, pixel_height, g_logical_dpi / dpi, g_logical_dpi / dpi, customScale)) {
 		NativeResized();
 		return true;
 	} else {

@@ -69,6 +69,7 @@
 #include "UI/MiscScreens.h"
 #include "UI/DevScreens.h"
 #include "UI/MainScreen.h"
+#include "UI/EmuScreen.h"
 #include "UI/ControlMappingScreen.h"
 #include "UI/DeveloperToolsScreen.h"
 #include "UI/JitCompareScreen.h"
@@ -948,6 +949,9 @@ void SystemInfoScreen::CreateInternalsTab(UI::ViewGroup *internals) {
 	internals->Add(new InfoItem(si->T("Texture count"), StringFromFormat("%d", text->GetStringCacheSize())));
 	internals->Add(new InfoItem(si->T("Data size"), NiceSizeFormat(text->GetCacheDataSize())));
 
+	internals->Add(new ItemHeader(si->T("Slider test")));
+	internals->Add(new Slider(&testSliderValue_, 0, 100, 1, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+
 	internals->Add(new ItemHeader(si->T("Notification tests")));
 	internals->Add(new Choice(si->T("Error")))->OnClick.Add([&](UI::EventParams &) {
 		std::string str = "Error " + CodepointToUTF8(0x1F41B) + CodepointToUTF8(0x1F41C) + CodepointToUTF8(0x1F914);
@@ -1156,12 +1160,12 @@ void FrameDumpTestScreen::CreateViews() {
 }
 
 UI::EventReturn FrameDumpTestScreen::OnLoadDump(UI::EventParams &params) {
-	std::string url = params.v->Tag();
+	Path url = Path(params.v->Tag());
 	INFO_LOG(Log::Common, "Trying to launch '%s'", url.c_str());
 	// Our disc streaming functionality detects the URL and takes over and handles loading framedumps well,
 	// except for some reason the game ID.
 	// TODO: Fix that since it can be important for compat settings.
-	LaunchFile(screenManager(), Path(url));
+	screenManager()->switchScreen(new EmuScreen(url));
 	return UI::EVENT_DONE;
 }
 
@@ -1370,13 +1374,13 @@ void TouchTestScreen::DrawForeground(UIContext &dc) {
 	snprintf(buffer, sizeof(buffer),
 		"display_res: %dx%d\n"
 		"dp_res: %dx%d pixel_res: %dx%d\n"
-		"dpi_scale: %0.3f\n"
-		"dpi_scale_real: %0.3f\n"
+		"dpi_scale: %0.3fx%0.3f\n"
+		"dpi_scale_real: %0.3fx%0.3f\n"
 		"delta: %0.2f ms fps: %0.3f\n%s",
 		(int)System_GetPropertyInt(SYSPROP_DISPLAY_XRES), (int)System_GetPropertyInt(SYSPROP_DISPLAY_YRES),
 		g_display.dp_xres, g_display.dp_yres, g_display.pixel_xres, g_display.pixel_yres,
-		g_display.dpi_scale,
-		g_display.dpi_scale_real,
+		g_display.dpi_scale_x, g_display.dpi_scale_y,
+		g_display.dpi_scale_real_x, g_display.dpi_scale_real_y,
 		delta * 1000.0, 1.0 / delta,
 		extra_debug);
 
