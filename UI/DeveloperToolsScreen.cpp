@@ -17,7 +17,6 @@
 
 #include <string>
 
-#include "android/jni/TestRunner.h"
 #include "Common/UI/View.h"
 #include "Common/UI/ViewGroup.h"
 #include "Common/System/OSD.h"
@@ -38,6 +37,8 @@
 #include "UI/DevScreens.h"
 #include "UI/DriverManagerScreen.h"
 #include "UI/DisplayLayoutScreen.h"
+#include "UI/GameSettingsScreen.h"
+#include "UI/OnScreenDisplay.h"
 
 #if PPSSPP_PLATFORM(ANDROID)
 
@@ -123,6 +124,7 @@ void DeveloperToolsScreen::CreateGeneralTab(UI::LinearLayout *list) {
 	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
 	auto sy = GetI18NCategory(I18NCat::SYSTEM);
 	auto gr = GetI18NCategory(I18NCat::GRAPHICS);
+	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 
 	list->Add(new ItemHeader(sy->T("CPU Core")));
 
@@ -156,12 +158,11 @@ void DeveloperToolsScreen::CreateGeneralTab(UI::LinearLayout *list) {
 
 	list->Add(new CheckBox(&g_Config.bEnableLogging, dev->T("Enable Logging")))->OnClick.Handle(this, &DeveloperToolsScreen::OnLoggingChanged);
 	list->Add(new Choice(dev->T("Logging Channels")))->OnClick.Handle(this, &DeveloperToolsScreen::OnLogConfig);
+	list->Add(new CheckBox(&g_Config.bEnableFileLogging, dev->T("Log to file")))->SetEnabledPtr(&g_Config.bEnableLogging);
 	list->Add(new CheckBox(&g_Config.bLogFrameDrops, dev->T("Log Dropped Frame Statistics")));
 	if (GetGPUBackend() == GPUBackend::VULKAN) {
 		list->Add(new CheckBox(&g_Config.bGpuLogProfiler, dev->T("GPU log profiler")));
 	}
-
-	list->Add(new CheckBox(&g_Config.bShowOnScreenMessages, dev->T("Show on-screen messages")));
 
 	allowDebugger_ = !WebServerStopped(WebServerFlags::DEBUGGER);
 	canAllowDebugger_ = !WebServerStopping(WebServerFlags::DEBUGGER);
@@ -184,7 +185,7 @@ void DeveloperToolsScreen::CreateGeneralTab(UI::LinearLayout *list) {
 	});
 #endif
 
-#if PPSSPP_PLATFORM(IOS_APP_STORE)
+#if PPSSPP_PLATFORM(IOS)
 	list->Add(new NoticeView(NoticeLevel::WARN, ms->T("Moving the memstick directory is NOT recommended on iOS"), ""));
 	list->Add(new Choice(sy->T("Set Memory Stick folder")))->OnClick.Add(
 		[=](UI::EventParams &) {
@@ -212,16 +213,21 @@ void DeveloperToolsScreen::CreateTestsTab(UI::LinearLayout *list) {
 		return UI::EVENT_DONE;
 	});
 	frameDumpTests->SetEnabled(!PSP_IsInited());
-#if !PPSSPP_PLATFORM(UWP)
-	Choice *cpuTests = new Choice(dev->T("Run CPU Tests"));
-	list->Add(cpuTests)->OnClick.Handle(this, &DeveloperToolsScreen::OnRunCPUTests);
-	cpuTests->SetEnabled(TestsAvailable() && !PSP_IsInited());
-#endif
 	// For now, we only implement GPU driver tests for Vulkan and OpenGL. This is simply
 	// because the D3D drivers are generally solid enough to not need this type of investigation.
 	if (g_Config.iGPUBackend == (int)GPUBackend::VULKAN || g_Config.iGPUBackend == (int)GPUBackend::OPENGL) {
 		list->Add(new Choice(dev->T("GPU Driver Test")))->OnClick.Handle(this, &DeveloperToolsScreen::OnGPUDriverTest);
 	}
+
+	// Not useful enough to be made visible.
+	/*
+	auto memmapTest = list->Add(new Choice(dev->T("Memory map test")));
+	memmapTest->OnClick.Add([this](UI::EventParams &e) {
+		MemoryMapTest();
+		return UI::EVENT_DONE;
+	});
+	memmapTest->SetEnabled(PSP_IsInited());
+	*/
 }
 
 void DeveloperToolsScreen::CreateDumpFileTab(UI::LinearLayout *list) {
@@ -318,6 +324,14 @@ void DeveloperToolsScreen::CreateAudioTab(UI::LinearLayout *list) {
 	list->Add(new CheckBox(&g_Config.bForceFfmpegForAudioDec, dev->T("Use FFMPEG for all compressed audio")));
 }
 
+void DeveloperToolsScreen::CreateNetworkTab(UI::LinearLayout *list) {
+	using namespace UI;
+	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
+	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
+	list->Add(new ItemHeader(ms->T("Networking")));
+	list->Add(new CheckBox(&g_Config.bDontDownloadInfraJson, dev->T("Don't download infra-dns.json")));
+}
+
 void DeveloperToolsScreen::CreateGraphicsTab(UI::LinearLayout *list) {
 	using namespace UI;
 	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
@@ -330,6 +344,7 @@ void DeveloperToolsScreen::CreateGraphicsTab(UI::LinearLayout *list) {
 
 	list->Add(new ItemHeader(sy->T("General")));
 	list->Add(new CheckBox(&g_Config.bVendorBugChecksEnabled, dev->T("Enable driver bug workarounds")));
+	list->Add(new CheckBox(&g_Config.bShaderCache, dev->T("Enable shader cache")));
 
 	static const char *ffModes[] = { "Render all frames", "", "Frame Skipping" };
 	PopupMultiChoice *ffMode = list->Add(new PopupMultiChoice(&g_Config.iFastForwardMode, dev->T("Fast-forward mode"), ffModes, 0, ARRAY_SIZE(ffModes), I18NCat::GRAPHICS, screenManager()));
@@ -441,6 +456,9 @@ void DeveloperToolsScreen::CreateTabs() {
 	AddTab("Graphics", ms->T("Graphics"), [this](UI::LinearLayout *parent) {
 		CreateGraphicsTab(parent);
 	});
+	AddTab("Networking", ms->T("Networking"), [this](UI::LinearLayout *parent) {
+		CreateNetworkTab(parent);
+	});
 	AddTab("Audio", ms->T("Audio"), [this](UI::LinearLayout *parent) {
 		CreateAudioTab(parent);
 	});
@@ -471,14 +489,6 @@ void DeveloperToolsScreen::onFinish(DialogResult result) {
 
 UI::EventReturn DeveloperToolsScreen::OnLoggingChanged(UI::EventParams &e) {
 	System_Notify(SystemNotification::TOGGLE_DEBUG_CONSOLE);
-	return UI::EVENT_DONE;
-}
-
-UI::EventReturn DeveloperToolsScreen::OnRunCPUTests(UI::EventParams &e) {
-	// TODO: If game is loaded, don't do anything.
-#if !PPSSPP_PLATFORM(UWP)
-	RunTests();
-#endif
 	return UI::EVENT_DONE;
 }
 
@@ -568,12 +578,18 @@ UI::EventReturn DeveloperToolsScreen::OnMIPSTracerEnabled(UI::EventParams &e) {
 
 UI::EventReturn DeveloperToolsScreen::OnMIPSTracerPathChanged(UI::EventParams &e) {
 	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
-	System_BrowseForFile(GetRequesterToken(), dev->T("Select the log file"), BrowseFileType::ANY,
+	System_BrowseForFileSave(
+		GetRequesterToken(),
+		dev->T("Select the log file"),
+		"trace.txt",
+		BrowseFileType::ANY,
 		[this](const std::string &value, int) {
-		mipsTracer.set_logging_path(value);
-		MIPSTracerPath_ = value;
-		MIPSTracerPath->SetRightText(MIPSTracerPath_);
-	});
+			mipsTracer.set_logging_path(value);
+			MIPSTracerPath_ = value;
+			MIPSTracerPath->SetRightText(MIPSTracerPath_);
+		}
+	);
+
 	return UI::EVENT_DONE;
 }
 
@@ -600,6 +616,18 @@ void DeveloperToolsScreen::update() {
 	UIDialogScreenWithBackground::update();
 	allowDebugger_ = !WebServerStopped(WebServerFlags::DEBUGGER);
 	canAllowDebugger_ = !WebServerStopping(WebServerFlags::DEBUGGER);
+}
+
+void DeveloperToolsScreen::MemoryMapTest() {
+	int sum = 0;
+	for (uint64_t addr = 0; addr < 0x100000000ULL; addr += 0x1000) {
+		const u32 addr32 = (u32)addr;
+		if (Memory::IsValidAddress(addr32)) {
+			sum += Memory::ReadUnchecked_U32(addr32);
+		}
+	}
+	// Just to force the compiler to do things properly.
+	INFO_LOG(Log::JIT, "Total sum: %08x", sum);
 }
 
 static bool RunMemstickTest(std::string *error) {
