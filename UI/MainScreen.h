@@ -40,8 +40,6 @@ enum class BrowseFlags {
 };
 ENUM_CLASS_BITOPS(BrowseFlags);
 
-bool LaunchFile(ScreenManager *screenManager, const Path &path);
-
 class GameBrowser : public UI::LinearLayout {
 public:
 	GameBrowser(int token, const Path &path, BrowseFlags browseFlags, bool *gridStyle, ScreenManager *screenManager, std::string_view lastText, std::string_view lastLink, UI::LayoutParams *layoutParams = nullptr);
@@ -148,7 +146,6 @@ protected:
 	UI::EventReturn OnLoadFile(UI::EventParams &e);
 	UI::EventReturn OnGameSettings(UI::EventParams &e);
 	UI::EventReturn OnCredits(UI::EventParams &e);
-	UI::EventReturn OnSupport(UI::EventParams &e);
 	UI::EventReturn OnPPSSPPOrg(UI::EventParams &e);
 	UI::EventReturn OnForums(UI::EventParams &e);
 	UI::EventReturn OnExit(UI::EventParams &e);
@@ -208,3 +205,5 @@ private:
 	const float MAX_GAME_GRID_SCALE = 3.0f;
 	const float MIN_GAME_GRID_SCALE = 0.8f;
 };
+
+void LaunchBuyGold(ScreenManager *screenManager);
