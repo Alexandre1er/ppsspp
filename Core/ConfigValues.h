@@ -106,7 +106,6 @@ enum class ScreenshotMode {
 // Software is not among these because it will have one of these perform the blit to display.
 enum class GPUBackend {
 	OPENGL = 0,
-	DIRECT3D9 = 1,
 	DIRECT3D11 = 2,
 	VULKAN = 3,
 };
@@ -188,6 +187,12 @@ enum class ShowStatusFlags {
 	FPS_COUNTER = 1 << 1,
 	SPEED_COUNTER = 1 << 2,
 	BATTERY_PERCENT = 1 << 3,
+};
+
+enum class SplineQuality {
+	LOW_QUALITY = 0,
+	MEDIUM_QUALITY = 1,
+	HIGH_QUALITY = 2,
 };
 
 enum class DumpFileType {

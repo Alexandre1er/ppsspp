@@ -167,12 +167,14 @@ bool TextureReplacer::LoadIni(std::string *error) {
 		// Allow overriding settings per game id.
 		std::string overrideFilename;
 		if (ini.GetOrCreateSection("games")->Get(gameID_.c_str(), &overrideFilename, "")) {
-			if (!overrideFilename.empty() && overrideFilename != INI_FILENAME) {
+			if (overrideFilename == "true") {
+				// Ignore it
+			} else if (!overrideFilename.empty() && overrideFilename != INI_FILENAME) {
 				IniFile overrideIni;
 				iniLoaded = overrideIni.LoadFromVFS(*dir, overrideFilename);
 				if (!iniLoaded) {
-					*error = "Loading override ini failed: " + overrideFilename;
-					ERROR_LOG(Log::TexReplacement, "Failed to load extra texture ini: %s", overrideFilename.c_str());
+					*error = "Loading override ini failed: '" + overrideFilename + "'";
+					ERROR_LOG(Log::TexReplacement, "Failed to load extra texture ini: '%s'", overrideFilename.c_str());
 					// Since this error is most likely to occure for texture pack creators, let's just bail here
 					// so that the creator is more likely to look in the logs for what happened.
 					delete dir;
@@ -790,6 +792,7 @@ void TextureReplacer::NotifyTextureDecoded(ReplacedTexture *texture, const Repla
 	_assert_msg_(saveEnabled_, "Texture saving not enabled");
 	_assert_(srcPitch >= 0);
 	_assert_(data);
+	_assert_(level >= 0);
 
 	if (!WillSave(replacedInfo)) {
 		// Ignore.

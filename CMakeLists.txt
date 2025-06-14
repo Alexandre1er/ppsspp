@@ -14,9 +14,11 @@ enable_language(ASM)
 add_compile_definitions(__STDC_CONSTANT_MACROS)
 
 # Include AppleClang and Clang.
-if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" OR ${CMAKE_CXX_COMPILER_ID} STREQUAL "AppleClang")
 	set(CLANG ON)
 	message("Clang enabled")
+else()
+	message("Non-Clang compiler detected: ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
 if(FORCED_CPU)
@@ -132,8 +134,22 @@ endif()
 if(GOLD)
 	add_compile_definitions(GOLD)
 	message("Gold Build")
+	if(IOS_APP_STORE)
+		message("WARNING: Gold build for iOS is deprecated")
+	endif()
 else()
 	message("Non-gold Build")
+endif()
+
+if(USE_IAP)
+	if(GOLD)
+		message(FATAL_ERROR "USE_IAP and GOLD can't be enabled together")
+	endif()
+	if(NOT IOS_APP_STORE)
+		message(FATAL_ERROR "USE_IAP can only be enabled in app store builds")
+	endif()
+	message("USE_IAP for iOS enabled")
+	add_compile_definitions(USE_IAP)
 endif()
 
 if(IOS_APP_STORE)
@@ -189,6 +205,8 @@ option(USE_ASAN "Use address sanitizer" OFF)
 option(USE_UBSAN "Use undefined behaviour sanitizer" OFF)
 option(USE_CCACHE "Use ccache if detected" ON)
 option(USE_NO_MMAP "Disable mmap usage" OFF)
+option(USE_IAP "IAP enabled" OFF)
+option(GOLD "Gold build" OFF)
 
 if(USE_CCACHE)
 	include(ccache)
@@ -318,6 +336,9 @@ endif()
 
 include_directories("${CMAKE_SOURCE_DIR}")
 
+if(ANDROID_LEGACY)
+	add_compile_definitions(ANDROID_LEGACY)
+endif()
 if(USING_EGL)
 	add_compile_definitions(USING_EGL)
 endif()
@@ -378,7 +399,7 @@ if(NOT MSVC)
 		# This one is very useful but has many false positives.
 		add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wno-class-memaccess>")
 	else()
-		add_compile_options(-Wno-deprecated-declarations)
+		add_compile_options(-Wno-deprecated-declarations -Wno-missing-braces)
 	endif()
 
 	if(ANDROID)
@@ -419,10 +440,6 @@ if(NOT MSVC)
 	endif()
 
 	include(CheckSymbolExists)
-	check_symbol_exists(_UCRT "windows.h" UCRT)
-	if (UCRT)
-		link_libraries("$<$<CONFIG:Debug>:ucrtbased>")
-	endif()
 
 	add_compile_definitions("$<$<CONFIG:Debug>:_DEBUG>")
 
@@ -590,12 +607,6 @@ source_group(LOONGARCH64 FILES ${CommonLOONGARCH64})
 
 if(WIN32)
 	set(CommonD3D
-		Common/GPU/D3D9/D3D9ShaderCompiler.cpp
-		Common/GPU/D3D9/D3D9ShaderCompiler.h
-		Common/GPU/D3D9/D3D9StateCache.cpp
-		Common/GPU/D3D9/D3D9StateCache.h
-		Common/GPU/D3D9/thin3d_d3d9.cpp
-		Common/GPU/D3D9/D3DCompilerLoader.cpp
 		Common/GPU/D3D11/thin3d_d3d11.cpp
 		Common/GPU/D3D11/D3D11Loader.cpp
 		Common/GPU/D3D11/D3D11Loader.h
@@ -920,7 +931,11 @@ if(IOS)
 	target_compile_definitions(Common PUBLIC GLES_SILENCE_DEPRECATION)
 endif()
 
-target_link_libraries(Common Ext::Snappy cpu_features imgui)
+target_link_libraries(Common Ext::Snappy cpu_features)
+
+if(NOT LIBRETRO)
+    target_link_libraries(Common imgui)
+endif()
 
 if(ARM64)
 	if(ANDROID)
@@ -1208,6 +1223,7 @@ else()
 			ext/libzip/zip_random_unix.c
 		)
 	endif()
+	target_compile_definitions(libzip PRIVATE HAVE_STDBOOL_H)
 	target_link_libraries(libzip)
 	include_directories(ext/libzip)
 	set(LIBZIP_LIBRARY libzip)
@@ -1332,6 +1348,8 @@ elseif(IOS AND NOT LIBRETRO)
 		ios/ViewControllerMetal.h
 		ios/iOSCoreAudio.mm
 		ios/iOSCoreAudio.h
+		ios/IAPManager.mm
+		ios/IAPManager.h
 		ios/CameraHelper.mm
 		ios/CameraHelper.h
 		ios/LocationHelper.mm
@@ -1495,7 +1513,7 @@ else()
 endif()
 
 if(WIN32)
-	target_link_libraries(Common winmm d3d9 dsound dxguid Version)
+	target_link_libraries(Common winmm dsound dxguid Version)
 endif()
 
 if(NOT LIBRETRO)
@@ -1506,7 +1524,6 @@ if(NOT LIBRETRO)
 endif()
 
 list(APPEND NativeAppSource
-	android/jni/TestRunner.cpp
 	UI/ImDebugger/ImDebugger.cpp
 	UI/ImDebugger/ImDebugger.h
 	UI/ImDebugger/ImGe.cpp
@@ -1535,6 +1552,8 @@ list(APPEND NativeAppSource
 	UI/EmuScreen.cpp
 	UI/GameInfoCache.h
 	UI/GameInfoCache.cpp
+	UI/IAPScreen.cpp
+	UI/IAPScreen.h
 	UI/MainScreen.h
 	UI/MainScreen.cpp
 	UI/MiscScreens.h
@@ -1652,6 +1671,7 @@ add_library(kirk STATIC
 	ext/libkirk/ec.c
 	ext/libkirk/kirk_engine.c
 	ext/libkirk/kirk_engine.h
+	ext/libkirk/kirk_common.h
 )
 target_include_directories(kirk PRIVATE ext/libkirk)
 
@@ -1852,21 +1872,6 @@ set(GPU_VULKAN
 	GPU/Vulkan/VulkanUtil.h
 )
 
-set(GPU_D3D9
-	GPU/Directx9/DrawEngineDX9.cpp
-	GPU/Directx9/DrawEngineDX9.h
-	GPU/Directx9/FramebufferManagerDX9.cpp
-	GPU/Directx9/FramebufferManagerDX9.h
-	GPU/Directx9/GPU_DX9.cpp
-	GPU/Directx9/GPU_DX9.h
-	GPU/Directx9/ShaderManagerDX9.cpp
-	GPU/Directx9/ShaderManagerDX9.h
-	GPU/Directx9/StateMappingDX9.cpp
-	GPU/Directx9/StateMappingDX9.h
-	GPU/Directx9/TextureCacheDX9.cpp
-	GPU/Directx9/TextureCacheDX9.h
-)
-
 set(GPU_D3D11
 	GPU/D3D11/DrawEngineD3D11.cpp
 	GPU/D3D11/DrawEngineD3D11.h
@@ -1887,7 +1892,7 @@ set(GPU_D3D11
 # We build Vulkan even on Apple to avoid annoying build differences.
 set(GPU_IMPLS ${GPU_GLES} ${GPU_VULKAN})
 if(WIN32)
-	list(APPEND GPU_IMPLS ${GPU_D3D9} ${GPU_D3D11})
+	list(APPEND GPU_IMPLS ${GPU_D3D11})
 endif()
 
 set(GPU_SOURCES
@@ -2670,8 +2675,7 @@ set(WindowsFiles
 	Windows/DSoundStream.h
 	Windows/EmuThread.cpp
 	Windows/EmuThread.h
-	Windows/GPU/D3D9Context.cpp
-	Windows/GPU/D3D9Context.h
+	Windows/GeDebugger/GeDebugger.cpp
 	Windows/GPU/D3D11Context.cpp
 	Windows/GPU/D3D11Context.h
 	Windows/GPU/WindowsGLContext.cpp
@@ -2717,10 +2721,15 @@ set(WindowsFiles
 	Windows/stdafx.h
 )
 
+if(ANDROID AND ARM64)
+	# Support 16kb page size on Android
+	target_link_options(${CoreLibName} PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})
 
 if(WIN32)
-	list(APPEND LinkCommon kernel32 user32 gdi32 shell32 comctl32 dsound xinput d3d9 winmm dinput8 ole32 winspool ksuser dwmapi mf uxtheme mfplat mfreadwrite mfuuid shlwapi)
+	list(APPEND LinkCommon kernel32 user32 gdi32 shell32 comctl32 dsound xinput winmm dinput8 ole32 winspool ksuser dwmapi mf uxtheme mfplat mfreadwrite mfuuid shlwapi)
 	#setup_target_project(${TargetBin} Windows)
 	list(APPEND NativeAppSource ${WindowsFiles})
 endif()
@@ -2777,8 +2786,6 @@ if(HEADLESS)
 		list(APPEND HeadlessSource
 			headless/WindowsHeadlessHost.cpp
 			headless/WindowsHeadlessHost.h
-			Windows/GPU/D3D9Context.cpp
-			Windows/GPU/D3D9Context.h
 			Windows/GPU/D3D11Context.cpp
 			Windows/GPU/D3D11Context.h
 			Windows/GPU/WindowsGLContext.cpp
@@ -2882,7 +2889,7 @@ if(TargetBin)
 
 		if(IOS)
 			set(AssetCatalog "${CMAKE_SOURCE_DIR}/ios/assets.xcassets")
-			add_executable(${TargetBin} MACOSX_BUNDLE ${ICON_PATH_ABS} ${NativeAssets} ${BigFontAssets} ${AssetCatalog} ${SHADER_FILES} ${THEME_FILE} ${DEBUGGER_FILES} ${FLASH0_FILES} ${LANG_FILES} ${NativeAppSource} "ios/Settings.bundle" "ios/Launch Screen.storyboard")
+			add_executable(${TargetBin} MACOSX_BUNDLE ${NativeAssets} ${BigFontAssets} ${AssetCatalog} ${SHADER_FILES} ${THEME_FILE} ${DEBUGGER_FILES} ${FLASH0_FILES} ${LANG_FILES} ${NativeAppSource} "ios/Settings.bundle" "ios/Launch Screen.storyboard")
 			if(NOT IOS_APP_STORE)
 				file(INSTALL "${CMAKE_SOURCE_DIR}/ext/vulkan/iOS/Frameworks/libMoltenVK.dylib" DESTINATION "${CMAKE_BINARY_DIR}/PPSSPP.app/Frameworks/")
 			endif()
@@ -2904,6 +2911,9 @@ if(TargetBin)
 		set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${TargetBin})
 	else()
 		add_executable(${TargetBin} ${NativeAppSource})
+	endif()
+	if(ANDROID AND ARM64)
+		target_link_options(${TargetBin} PRIVATE "-Wl,-z,max-page-size=16384")
 	endif()
 	target_link_libraries(${TargetBin} ${LinkCommon} Common)
 endif()
@@ -2946,13 +2956,14 @@ if(IOS AND NOT LIBRETRO)
 	set(MACOSX_DEPLOYMENT_TARGET ${DEPLOYMENT_TARGET})
 	set(PRODUCT_NAME "PPSSPP")
 	set(BUNDLE_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/PPSSPP-Info.plist")
+	set(BUNDLE_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/ios/App.entitlements")
 	if(GOLD)
 		if(IOS_APP_STORE)
 			set(BUNDLE_IDENTIFIER "org.ppsspp.ppsspp-gold")
 		else()
 			set(BUNDLE_IDENTIFIER "org.ppsspp.ppssppgold")
 		endif()
-		set(ICON_NAME "AppIconGold")
+		set(ICON_NAME "PPSSPPGold")
 		set(DISPLAY_NAME "PPSSPP Gold")
 	else()
 		if(IOS_APP_STORE)
@@ -2964,13 +2975,15 @@ if(IOS AND NOT LIBRETRO)
 		set(DISPLAY_NAME "PPSSPP")
 	endif()
 	if(IOS_APP_STORE)
-		message(STATUS "DevTeam: ${DEVELOPMENT_TEAM_ID} Icon: ${ICON_NAME} Target: ${TargetBin}")
+		message(STATUS "DevTeam: ${DEVELOPMENT_TEAM_ID} Icon: ${ICON_NAME} Target: ${TargetBin} Gold: ${GOLD} IAP: ${USE_IAP}")
 		message(STATUS "CURRENT_BINARY_DIR: ${CMAKE_CURRENT_BINARY_DIR}")
 
 		# This is for injecting the version into the plist, and also copying resources.
 		# Should find a different way to do both these things.
 		add_custom_command(TARGET ${TargetBin} POST_BUILD
 			COMMAND echo "Creating ${APP_DIR_NAME} for app store build"
+			COMMAND echo "CURRENT_BINARY_DIR: ${CMAKE_CURRENT_BINARY_DIR}"
+			COMMAND echo "BINARY_DIR: ${CMAKE_BINARY_DIR}"
 			COMMAND mkdir -p \"${APP_DIR_NAME}\"
 				# This tar command seems to be responsible for copying assets. I thought we had another step that did that..
 				# Prepend -v to the extracting command to see the files copied.
@@ -2983,8 +2996,13 @@ if(IOS AND NOT LIBRETRO)
 		target_link_libraries(${TargetBin}
 			"${CMAKE_CURRENT_SOURCE_DIR}/ios/MoltenVK/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
 		)
-
 		# https://stackoverflow.com/questions/40664125/cmake-and-code-signing-in-xcode-8-for-ios-projects
+		target_compile_options(${TargetBin} PRIVATE
+			$<$<CONFIG:Release>:-g -gline-tables-only>
+		)
+		target_compile_options(${TargetBin} PRIVATE
+			$<$<CONFIG:RelWithDebInfo>:-g>
+		)
 		set_target_properties(${TargetBin} PROPERTIES
 			XCODE_GENERATE_SCHEME YES  # Avoid the scheme bloat in XCode by only setting it to YES for this target.
 			RESOURCE "ios/Launch Screen.storyboard"
@@ -2995,10 +3013,10 @@ if(IOS AND NOT LIBRETRO)
 			XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME ${ICON_NAME}
 			BUILD_WITH_INSTALL_RPATH YES
 			MACOSX_BUNDLE_INFO_PLIST ${BUNDLE_PLIST}
-				# Some sources say we should generate the PLIST. There's stuff in it that
-				# I don't know how to generate, though.
-				#XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "YES"
-				#XCODE_ATTRIBUTE_INFOPLIST_KEY_UIRequiredDeviceCapabilities arm64
+			# Some sources say we should generate the PLIST. There's stuff in it that
+			# I don't know how to generate, though.
+			#XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "YES"
+			#XCODE_ATTRIBUTE_INFOPLIST_KEY_UIRequiredDeviceCapabilities arm64
 			XCODE_ATTRIBUTE_INFOPLIST_KEY_UIFileSharingEnabled YES
 			XCODE_EMBED_FRAMEWORKS_REMOVE_HEADERS_ON_COPY YES
 			XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY YES
@@ -3009,8 +3027,15 @@ if(IOS AND NOT LIBRETRO)
 			XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${DEVELOPMENT_TEAM_ID}
 			XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
 			XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+			XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS YES
+
+			XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+			XCODE_ATTRIBUTE_DEPLOYMENT_POSTPROCESSING[variant=Release] "YES"
+			XCODE_ATTRIBUTE_STRIP_INSTALLED_PRODUCT[variant=Release] "YES"
+
+			#XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS ${BUNDLE_ENTITLEMENTS}
 			XCODE_ATTRIBUTE_SKIP_INSTALL NO
-						XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+			XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
 		)
 	else()
 		# This is for injecting the version into the plist.
@@ -3020,6 +3045,7 @@ if(IOS AND NOT LIBRETRO)
 			COMMAND tar -c -C ${CMAKE_CURRENT_BINARY_DIR} --exclude .DS_Store --exclude .git assets *.png | tar -x -C \"${APP_DIR_NAME}\"
 			COMMAND /bin/bash "${CMAKE_SOURCE_DIR}/ios/macbundle.sh" \"${APP_DIR_NAME}\"
 		)
+
 		set_target_properties(${TargetBin} PROPERTIES
 			MACOSX_BUNDLE_INFO_PLIST ${BUNDLE_PLIST}
 			XCODE_GENERATE_SCHEME YES
