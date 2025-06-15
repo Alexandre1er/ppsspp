@@ -473,14 +473,18 @@ static std::string map_psp_language_to_i18n_locale(int val)
    }
 }
 
-static void check_variables(CoreParameter &coreParam)
-{
+static void check_dynamic_variables(CoreParameter &coreParam) {
    if (g_Config.bForceLagSync)
    {
       bool isFastForwarding;
       if (environ_cb(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &isFastForwarding))
-          coreParam.fastForward = isFastForwarding;
+         coreParam.fastForward = isFastForwarding;
    }
+}
+
+static void check_variables(CoreParameter &coreParam)
+{
+   check_dynamic_variables(coreParam);
 
    struct retro_variable var = {0};
    std::string sTextureShaderName_prev;
@@ -1321,8 +1325,9 @@ namespace Libretro
    static void EmuFrame()
    {
       ctx->SetRenderTarget();
-      if (ctx->GetDrawContext())
+      if (ctx->GetDrawContext()) {
          ctx->GetDrawContext()->BeginFrame(Draw::DebugFlags::NONE);
+      }
 
       if (gpu)
          gpu->BeginHostFrame();
@@ -1330,6 +1335,7 @@ namespace Libretro
       PSP_RunLoopWhileState();
       switch (coreState) {
       case CORE_NEXTFRAME:
+      case CORE_POWERDOWN:
          // Reached the end of the frame while running at full blast, all good. Set back to running for the next frame
          coreState = CORE_RUNNING_CPU;
          break;
@@ -1451,6 +1457,7 @@ bool retro_load_game(const struct retro_game_info *game)
    retro_check_backend();
 
    ctx       = LibretroGraphicsContext::CreateGraphicsContext();
+
    INFO_LOG(Log::System, "Using %s backend", ctx->Ident());
 
    Core_SetGraphicsContext(ctx);
@@ -1505,8 +1512,9 @@ bool retro_load_game(const struct retro_game_info *game)
    // Launch the init process.
    if (!PSP_InitStart(coreParam)) {
       g_bootErrorString = coreParam.errorString;
-      // Can't really fail, the errors happen later during InitUpdate
+      // Can't really fail, the errors normally happen later during InitUpdate
       ERROR_LOG(Log::Boot, "%s", g_bootErrorString.c_str());
+      g_pendingBoot = false;
       return false;
    }
 
@@ -1676,6 +1684,8 @@ void retro_run(void)
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated)
       && updated)
       check_variables(PSP_CoreParameter());
+   else
+      check_dynamic_variables(PSP_CoreParameter());
 
    retro_input();
 

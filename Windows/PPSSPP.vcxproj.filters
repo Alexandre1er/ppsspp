@@ -120,9 +120,6 @@
     <ClCompile Include="..\android\jni\Arm64EmitterTest.cpp">
       <Filter>Other Platforms</Filter>
     </ClCompile>
-    <ClCompile Include="..\android\jni\TestRunner.cpp">
-      <Filter>Other Platforms</Filter>
-    </ClCompile>
     <ClCompile Include="DinputDevice.cpp">
       <Filter>Windows\Input</Filter>
     </ClCompile>
@@ -174,9 +171,6 @@
     </ClCompile>
     <ClCompile Include="MainWindow.cpp">
       <Filter>Windows\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="GPU\D3D9Context.cpp">
-      <Filter>Windows\System</Filter>
     </ClCompile>
     <ClCompile Include="GPU\WindowsGLContext.cpp">
       <Filter>Windows\System</Filter>
@@ -339,9 +333,6 @@
     <ClInclude Include="..\android\jni\Arm64EmitterTest.h">
       <Filter>Other Platforms</Filter>
     </ClInclude>
-    <ClInclude Include="..\android\jni\TestRunner.h">
-      <Filter>Other Platforms</Filter>
-    </ClInclude>
     <ClInclude Include="DinputDevice.h">
       <Filter>Windows\Input</Filter>
     </ClInclude>
@@ -389,9 +380,6 @@
     </ClInclude>
     <ClInclude Include="MainWindow.h">
       <Filter>Windows\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="GPU\D3D9Context.h">
-      <Filter>Windows\System</Filter>
     </ClInclude>
     <ClInclude Include="GPU\WindowsGLContext.h">
       <Filter>Windows\System</Filter>
